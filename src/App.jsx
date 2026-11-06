@@ -1149,7 +1149,7 @@ function App() {
                 </>
               )}
 
-              {currentView === 'create' && (
+          {currentView === 'create' && (
                 <form className="create-screen" onSubmit={handleCreatePost}>
                   <div className="create-top">
                     <button type="button" className="icon-round" onClick={() => openAppView('dashboard')} aria-label="Fechar">
@@ -1169,7 +1169,7 @@ function App() {
                     />
                   </section>
 
-                  {/* Campo de Prazo / Data e Hora futura exigido */}
+                  {/* CAMPO DE PRAZO / DATA E HORA FUTURA  */}
                   <section className="create-block">
                     <label className="block-label" htmlFor="challenge-deadline">Prazo limite (Data e Hora futura) *</label>
                     <input 
