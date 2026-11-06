@@ -1,36 +1,57 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import QRCode from 'react-qr-code'
-import './App.css'
+import { useState, useEffect, useCallback, useRef } from "react";
 
-const API_URL = import.meta.env.VITE_API_URL || ''
-const MAX_RETRIES = 5
+import QRCode from "react-qr-code";
+
+import "./App.css";
+
+import {
+  agendarLembrete,
+  listarLembretes,
+  cancelarLembrete,
+} from "./services/lembretes";
+
+const API_URL = import.meta.env.VITE_API_URL || "";
+
+const MAX_RETRIES = 5;
 
 // Helper to generate unique offline IDs safely
-function generateTempId(prefix = 'offline') {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+
+function generateTempId(prefix = "offline") {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 }
 
-function Icon({ name, filled = false, className = '' }) {
+function Icon({ name, filled = false, className = "" }) {
   return (
     <span
       className={`material-symbols-outlined ${className}`}
-      style={filled ? { fontVariationSettings: "'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24" } : undefined}
+      style={
+        filled
+          ? {
+              fontVariationSettings:
+                "'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24",
+            }
+          : undefined
+      }
     >
       {name}
     </span>
-  )
+  );
 }
 
-function MediaPickers({ onChange, mode = 'media' }) {
-  const photoOnly = mode === 'photo'
+function MediaPickers({ onChange, mode = "media" }) {
+  const photoOnly = mode === "photo";
 
   const handleCameraClick = (e) => {
     // Janela de confirmação antes de abrir a câmera nativa
-    const confirmar = window.confirm("Deseja realmente abrir a câmera do dispositivo para capturar a imagem do desafio?");
+
+    const confirmar = window.confirm(
+      "Deseja realmente abrir a câmera do dispositivo para capturar a imagem do desafio?",
+    );
+
     if (!confirmar) {
       e.preventDefault(); // Cancela a abertura da câmera se o usuário recusar
     }
-  }
+  };
 
   return (
     <div className="media-actions">
@@ -38,224 +59,396 @@ function MediaPickers({ onChange, mode = 'media' }) {
         <button type="button" className="btn-secondary">
           <Icon name="photo_library" /> Galeria
         </button>
-        <input type="file" accept={photoOnly ? 'image/*' : 'image/*,video/*'} onChange={onChange} />
+
+        <input
+          type="file"
+          accept={photoOnly ? "image/*" : "image/*,video/*"}
+          onChange={onChange}
+        />
       </div>
+
       <div className="upload-btn-wrapper">
         <button type="button" className="btn-secondary">
           <Icon name="photo_camera" /> Tirar foto
         </button>
+
         {/* Adicionamos o evento onClick para interceptar e pedir confirmação */}
-        <input 
-          type="file" 
-          accept="image/*" 
-          capture="environment" 
-          onChange={onChange} 
-          onClick={handleCameraClick} 
+
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={onChange}
+          onClick={handleCameraClick}
         />
       </div>
+
       {!photoOnly && (
         <div className="upload-btn-wrapper">
           <button type="button" className="btn-secondary">
             <Icon name="videocam" /> Gravar
           </button>
-          <input type="file" accept="video/*" capture="environment" onChange={onChange} />
+
+          <input
+            type="file"
+            accept="video/*"
+            capture="environment"
+            onChange={onChange}
+          />
         </div>
       )}
     </div>
-  )
+  );
 }
 
-function UserAvatar({ user, size = '' }) {
-  const letter = user?.name?.charAt(0)?.toUpperCase() || '?'
+function UserAvatar({ user, size = "" }) {
+  const letter = user?.name?.charAt(0)?.toUpperCase() || "?";
+
   return (
     <div className={`avatar ${size}`.trim()}>
-      {user?.avatar ? <img src={user.avatar} alt={user.name || 'Foto de perfil'} /> : letter}
+      {user?.avatar ? (
+        <img src={user.avatar} alt={user.name || "Foto de perfil"} />
+      ) : (
+        letter
+      )}
     </div>
-  )
+  );
 }
 
 function resizeImageToDataUrl(file, maxSize = 400) {
   return new Promise((resolve, reject) => {
-    const image = new Image()
-    const url = URL.createObjectURL(file)
+    const image = new Image();
+
+    const url = URL.createObjectURL(file);
+
     image.onload = () => {
-      const canvas = document.createElement('canvas')
-      const scale = Math.min(maxSize / image.width, maxSize / image.height, 1)
-      canvas.width = Math.max(1, Math.round(image.width * scale))
-      canvas.height = Math.max(1, Math.round(image.height * scale))
-      const ctx = canvas.getContext('2d')
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-      URL.revokeObjectURL(url)
-      resolve(canvas.toDataURL('image/jpeg', 0.82))
-    }
+      const canvas = document.createElement("canvas");
+
+      const scale = Math.min(maxSize / image.width, maxSize / image.height, 1);
+
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+
+      const ctx = canvas.getContext("2d");
+
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      URL.revokeObjectURL(url);
+
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+
     image.onerror = () => {
-      URL.revokeObjectURL(url)
-      reject(new Error('Não foi possível ler a imagem.'))
-    }
-    image.src = url
-  })
+      URL.revokeObjectURL(url);
+
+      reject(new Error("Não foi possível ler a imagem."));
+    };
+
+    image.src = url;
+  });
 }
 
 function App() {
+  const [scheduledReminders, setScheduledReminders] = useState([]);
+  const [reminderTitle, setReminderTitle] = useState("");
+
+  const refreshReminders = useCallback(async () => {
+    try {
+      const result = await listarLembretes();
+      const reminders = Array.isArray(result)
+        ? result
+        : result?.notifications || [];
+      setScheduledReminders(reminders);
+    } catch (error) {
+      console.error("Erro ao consultar lembretes:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    let ativo = true;
+
+    const carregarLembretes = async () => {
+      try {
+        const lembretes = await listarLembretes();
+
+        if (ativo) {
+          setScheduledReminders(
+            Array.isArray(lembretes)
+              ? lembretes
+              : lembretes?.notifications || [],
+          );
+        }
+      } catch (error) {
+        console.error("Erro ao carregar lembretes:", error);
+      }
+    };
+
+    carregarLembretes();
+
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  const schedulePostReminder = async (post) => {
+    if (!post?.reminderId || !post?.deadline) return;
+    try {
+      await agendarLembrete(
+        post.reminderId,
+        post.reminderTitle || "Lembrete de desafio",
+        post.text || "Confira seu desafio!",
+        post.deadline,
+      );
+      await refreshReminders();
+    } catch (error) {
+      console.error("Erro ao agendar lembrete:", error);
+    }
+  };
+
   const [currentUser, setCurrentUser] = useState(() => {
     try {
-      const loggedInUser = localStorage.getItem('currentUser')
-      return loggedInUser && loggedInUser !== 'undefined' ? JSON.parse(loggedInUser) : null
+      const loggedInUser = localStorage.getItem("currentUser");
+
+      return loggedInUser && loggedInUser !== "undefined"
+        ? JSON.parse(loggedInUser)
+        : null;
     } catch {
-      localStorage.removeItem('currentUser')
-      return null
+      localStorage.removeItem("currentUser");
+
+      return null;
     }
-  })
+  });
 
   const [currentView, setCurrentView] = useState(() => {
     try {
-      const loggedInUser = localStorage.getItem('currentUser')
-      const user = loggedInUser && loggedInUser !== 'undefined' ? JSON.parse(loggedInUser) : null
-      return user ? 'dashboard' : 'login'
+      const loggedInUser = localStorage.getItem("currentUser");
+
+      const user =
+        loggedInUser && loggedInUser !== "undefined"
+          ? JSON.parse(loggedInUser)
+          : null;
+
+      return user ? "dashboard" : "login";
     } catch {
-      return 'login'
+      return "login";
     }
-  })
+  });
 
   // Network & Offline Status
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true))
-  const [isSyncing, setIsSyncing] = useState(false)
+
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
+
+  const [isSyncing, setIsSyncing] = useState(false);
+
   const [offlineQueue, setOfflineQueue] = useState(() => {
     try {
-      const savedQueue = localStorage.getItem('desafiox_offline_queue')
-      return savedQueue ? JSON.parse(savedQueue) : []
+      const savedQueue = localStorage.getItem("desafiox_offline_queue");
+
+      return savedQueue ? JSON.parse(savedQueue) : [];
     } catch {
-      return []
+      return [];
     }
-  })
+  });
 
   // Toast notifications state
-  const [toasts, setToasts] = useState([])
+
+  const [toasts, setToasts] = useState([]);
 
   // Cached Users & Posts State
+
   const [users, setUsers] = useState(() => {
     try {
-      const cached = localStorage.getItem('desafiox_cached_users')
-      return cached ? JSON.parse(cached) : []
+      const cached = localStorage.getItem("desafiox_cached_users");
+
+      return cached ? JSON.parse(cached) : [];
     } catch {
-      return []
+      return [];
     }
-  })
+  });
 
   const [posts, setPosts] = useState(() => {
     try {
-      const cached = localStorage.getItem('desafiox_cached_posts')
-      return cached ? JSON.parse(cached) : []
-    } catch {
-      return []
-    }
-  })
+      const cached = localStorage.getItem("desafiox_cached_posts");
 
-  const [postText, setPostText] = useState('')
-  const [postDeadline, setPostDeadline] = useState('') // Campo de prazo/data futura 
-  const [postMedia, setPostMedia] = useState(null)
-  const [postMediaType, setPostMediaType] = useState('')
-  const [taggedUsers, setTaggedUsers] = useState([])
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [postText, setPostText] = useState("");
+
+  const [postDeadline, setPostDeadline] = useState(""); // Campo de prazo/data futura
+
+  const [postMedia, setPostMedia] = useState(null);
+
+  const [postMediaType, setPostMediaType] = useState("");
+
+  const [taggedUsers, setTaggedUsers] = useState([]);
 
   // Reply states
-  const [activeReplyId, setActiveReplyId] = useState(null)
-  const [replyText, setReplyText] = useState('')
-  const [replyMedia, setReplyMedia] = useState(null)
-  const [replyMediaType, setReplyMediaType] = useState('')
+
+  const [activeReplyId, setActiveReplyId] = useState(null);
+
+  const [replyText, setReplyText] = useState("");
+
+  const [replyMedia, setReplyMedia] = useState(null);
+
+  const [replyMediaType, setReplyMediaType] = useState("");
 
   // Input states
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [birthDate, setBirthDate] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [showQR, setShowQR] = useState(false)
-  const [feedFilter, setFeedFilter] = useState('all')
-  const [editingProfile, setEditingProfile] = useState(false)
-  const [profileName, setProfileName] = useState('')
-  const [profileAvatar, setProfileAvatar] = useState(null)
+
+  const [name, setName] = useState("");
+
+  const [email, setEmail] = useState("");
+
+  const [birthDate, setBirthDate] = useState("");
+
+  const [password, setPassword] = useState("");
+
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [showQR, setShowQR] = useState(false);
+
+  const [feedFilter, setFeedFilter] = useState("all");
+
+  const [editingProfile, setEditingProfile] = useState(false);
+
+  const [profileName, setProfileName] = useState("");
+
+  const [profileAvatar, setProfileAvatar] = useState(null);
 
   const removeToast = useCallback((id) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id))
-  }, [])
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  }, []);
 
-  const addToast = useCallback((message, type = 'info') => {
-    const id = generateTempId('toast')
-    setToasts(prev => [...prev, { id, message, type }])
-    
-    setTimeout(() => {
-      removeToast(id)
-    }, 4500)
-  }, [removeToast])
+  const addToast = useCallback(
+    (message, type = "info") => {
+      const id = generateTempId("toast");
 
-  const addToOfflineQueue = useCallback((payload, type = 'post') => {
-    const tempId = generateTempId(`offline_${type}`)
-    setOfflineQueue(prev => [...prev, { tempId, type, payload, timestamp: Date.now() }])
+      setToasts((prev) => [...prev, { id, message, type }]);
 
-    const localItem = {
-      ...payload,
-      id: tempId,
-      pendingSync: true,
-    }
-    setPosts(prev => [localItem, ...prev])
-    addToast(`Modo Offline: ${type === 'post' ? 'Desafio' : 'Resposta'} salvo localmente. Será enviado ao reconectar.`, 'warning')
-  }, [addToast])
+      setTimeout(() => {
+        removeToast(id);
+      }, 4500);
+    },
+    [removeToast],
+  );
+
+  const addToOfflineQueue = useCallback(
+    (payload, type = "post") => {
+      const tempId = generateTempId(`offline_${type}`);
+
+      setOfflineQueue((prev) => [
+        ...prev,
+        { tempId, type, payload, timestamp: Date.now() },
+      ]);
+
+      const localItem = {
+        ...payload,
+
+        id: tempId,
+
+        pendingSync: true,
+      };
+
+      setPosts((prev) => [localItem, ...prev]);
+
+      addToast(
+        `Modo Offline: ${type === "post" ? "Desafio" : "Resposta"} salvo localmente. Será enviado ao reconectar.`,
+        "warning",
+      );
+    },
+    [addToast],
+  );
 
   // References to avoid stale closures in listeners
-  const offlineQueueRef = useRef(offlineQueue)
-  const isSyncingRef = useRef(false)
+
+  const offlineQueueRef = useRef(offlineQueue);
+
+  const isSyncingRef = useRef(false);
+
   useEffect(() => {
-    offlineQueueRef.current = offlineQueue
+    offlineQueueRef.current = offlineQueue;
+
     try {
-      localStorage.setItem('desafiox_offline_queue', JSON.stringify(offlineQueue))
+      localStorage.setItem(
+        "desafiox_offline_queue",
+        JSON.stringify(offlineQueue),
+      );
     } catch (e) {
-      console.warn('Falha ao salvar offline queue no localStorage:', e)
+      console.warn("Falha ao salvar offline queue no localStorage:", e);
     }
-  }, [offlineQueue])
+  }, [offlineQueue]);
 
   // Save cached posts to localStorage
+
   useEffect(() => {
     try {
-      localStorage.setItem('desafiox_cached_posts', JSON.stringify(posts))
+      localStorage.setItem("desafiox_cached_posts", JSON.stringify(posts));
     } catch (e) {
-      console.warn('Falha ao salvar posts no cache local:', e)
+      console.warn("Falha ao salvar posts no cache local:", e);
     }
-  }, [posts])
+  }, [posts]);
 
   // Save cached users to localStorage
+
   useEffect(() => {
     try {
-      localStorage.setItem('desafiox_cached_users', JSON.stringify(users))
+      localStorage.setItem("desafiox_cached_users", JSON.stringify(users));
     } catch (e) {
-      console.warn('Falha ao salvar usuários no cache local:', e)
+      console.warn("Falha ao salvar usuários no cache local:", e);
     }
-  }, [users])
+  }, [users]);
 
   // Sync Offline Queue
+
   const syncOfflineQueue = useCallback(async () => {
     const currentQueue = offlineQueueRef.current;
-    if (currentQueue.length === 0 || !navigator.onLine || isSyncingRef.current) return;
+
+    if (currentQueue.length === 0 || !navigator.onLine || isSyncingRef.current)
+      return;
 
     isSyncingRef.current = true;
+
     setIsSyncing(true);
 
     const queueCopy = [...currentQueue];
+
     const remaining = [];
+
     const failed = [];
 
     for (const item of queueCopy) {
       try {
         const response = await fetch(`${API_URL}/api/posts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+
+          headers: { "Content-Type": "application/json" },
+
           body: JSON.stringify(item.payload),
         });
 
         if (response.ok) {
           const serverPost = await response.json();
-          setPosts(prev => prev.map(p => (p.id === item.tempId ? serverPost : p)));
+
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === item.tempId
+                ? {
+                    ...serverPost,
+                    reminderId: item.payload?.reminderId,
+                    reminderTitle: item.payload?.reminderTitle,
+                  }
+                : p,
+            ),
+          );
         } else {
           const updatedItem = { ...item, retries: (item.retries || 0) + 1 };
+
           if (updatedItem.retries >= MAX_RETRIES) {
             failed.push(updatedItem);
           } else {
@@ -263,8 +456,10 @@ function App() {
           }
         }
       } catch (err) {
-        console.error('Erro ao sincronizar:', err);
+        console.error("Erro ao sincronizar:", err);
+
         const updatedItem = { ...item, retries: (item.retries || 0) + 1 };
+
         if (updatedItem.retries >= MAX_RETRIES) {
           failed.push(updatedItem);
         } else {
@@ -274,629 +469,937 @@ function App() {
     }
 
     setOfflineQueue(remaining);
+
     setIsSyncing(false);
+
     isSyncingRef.current = false;
 
     const successCount = queueCopy.length - remaining.length - failed.length;
+
     if (successCount > 0) {
-      addToast(`✅ ${successCount} item(ns) sincronizados.`, 'success');
+      addToast(`✅ ${successCount} item(ns) sincronizados.`, "success");
     }
+
     if (failed.length > 0) {
-      localStorage.setItem('desafiox_failed_queue', JSON.stringify(failed));
-      addToast(`⚠️ ${failed.length} item(ns) falharam permanentemente. Verifique e tente novamente.`, 'error');
+      localStorage.setItem("desafiox_failed_queue", JSON.stringify(failed));
+
+      addToast(
+        `⚠️ ${failed.length} item(ns) falharam permanentemente. Verifique e tente novamente.`,
+        "error",
+      );
     }
   }, [addToast]);
 
   // Listen for online / offline network events and fetch initial data
+
   useEffect(() => {
-    let isMounted = true
-    let onlineTimeout
+    let isMounted = true;
+
+    let onlineTimeout;
 
     const loadData = async () => {
-      if (!navigator.onLine) return
+      if (!navigator.onLine) return;
 
       try {
-        const postsRes = await fetch(`${API_URL}/api/posts`)
+        const postsRes = await fetch(`${API_URL}/api/posts`);
+
         if (postsRes.ok && isMounted) {
-          const postsData = await postsRes.json()
+          const postsData = await postsRes.json();
+
           if (!postsData.error && Array.isArray(postsData)) {
-            setPosts(prev => {
-              const pending = prev.filter(p => p.pendingSync)
-              const serverPostIds = new Set(postsData.map(p => String(p.id)))
-              const uniquePending = pending.filter(p => !serverPostIds.has(String(p.id)))
-              return [...uniquePending, ...postsData]
-            })
+            setPosts((prev) => {
+              const pending = prev.filter((p) => p.pendingSync);
+
+              const serverPostIds = new Set(postsData.map((p) => String(p.id)));
+
+              const uniquePending = pending.filter(
+                (p) => !serverPostIds.has(String(p.id)),
+              );
+
+              return [...uniquePending, ...postsData];
+            });
           }
         }
       } catch (err) {
-        console.warn('Não foi possível atualizar posts do servidor:', err)
+        console.warn("Não foi possível atualizar posts do servidor:", err);
       }
 
       try {
-        const usersRes = await fetch(`${API_URL}/api/users`)
+        const usersRes = await fetch(`${API_URL}/api/users`);
+
         if (usersRes.ok && isMounted) {
-          const usersData = await usersRes.json()
+          const usersData = await usersRes.json();
+
           if (!usersData.error && Array.isArray(usersData)) {
-            setUsers(usersData)
+            setUsers(usersData);
           }
         }
       } catch (err) {
-        console.warn('Não foi possível atualizar usuários do servidor:', err)
+        console.warn("Não foi possível atualizar usuários do servidor:", err);
       }
-    }
+    };
 
     const handleOnline = () => {
-      clearTimeout(onlineTimeout)
+      clearTimeout(onlineTimeout);
+
       onlineTimeout = setTimeout(() => {
         setIsOnline(true);
-        addToast('Conexão restabelecida! Você está online.', 'success');
+
+        addToast("Conexão restabelecida! Você está online.", "success");
+
         loadData();
-        syncOfflineQueue()
-      }, 300)
-    }
+
+        syncOfflineQueue();
+      }, 300);
+    };
 
     const handleOffline = () => {
-      clearTimeout(onlineTimeout)
+      clearTimeout(onlineTimeout);
+
       setIsOnline(false);
-      addToast('Conexão perdida. O aplicativo continuará funcionando no modo offline.', 'warning');
-    }
 
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
+      addToast(
+        "Conexão perdida. O aplicativo continuará funcionando no modo offline.",
+        "warning",
+      );
+    };
 
-    loadData()
+    window.addEventListener("online", handleOnline);
+
+    window.addEventListener("offline", handleOffline);
+
+    loadData();
 
     return () => {
-      isMounted = false
-      clearTimeout(onlineTimeout)
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [addToast, syncOfflineQueue])
+      isMounted = false;
+
+      clearTimeout(onlineTimeout);
+
+      window.removeEventListener("online", handleOnline);
+
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [addToast, syncOfflineQueue]);
 
   const clearForm = () => {
-    setName('')
-    setEmail('')
-    setPassword('')
-    setBirthDate('')
-    setShowPassword(false)
-  }
+    setName("");
+
+    setEmail("");
+
+    setPassword("");
+
+    setBirthDate("");
+
+    setShowPassword(false);
+  };
 
   const calculateAge = (birthDate) => {
-    const [year, month, day] = birthDate.split('-').map(Number)
-    const today = new Date()
-    let age = today.getFullYear() - year
+    const [year, month, day] = birthDate.split("-").map(Number);
+
+    const today = new Date();
+
+    let age = today.getFullYear() - year;
+
     const birthdayNotReached =
       today.getMonth() + 1 < month ||
-      (today.getMonth() + 1 === month && today.getDate() < day)
+      (today.getMonth() + 1 === month && today.getDate() < day);
+
     if (birthdayNotReached) {
-      age--
+      age--;
     }
-    return age
-  }
+
+    return age;
+  };
 
   const handleRegister = async (e) => {
-    e.preventDefault()
+    e.preventDefault();
 
     if (!name || !email || !password) {
-      addToast('Por favor, preencha todos os campos.', 'error')
-      return
+      addToast("Por favor, preencha todos os campos.", "error");
+
+      return;
     }
 
     if (!birthDate) {
-      addToast('Por favor, informe sua data de nascimento.', 'error')
-      return
+      addToast("Por favor, informe sua data de nascimento.", "error");
+
+      return;
     }
 
-    const age = calculateAge(birthDate)
+    const age = calculateAge(birthDate);
 
     if (age < 18) {
-      addToast('Você deve ter pelo menos 18 anos para se registrar.', 'error')
-      return
+      addToast("Você deve ter pelo menos 18 anos para se registrar.", "error");
+
+      return;
     }
 
     if (!isOnline) {
       addToast(
-        'Cadastro requer conexão com a internet. Conecte-se e tente novamente.',
-        'warning'
-      )
-      return
+        "Cadastro requer conexão com a internet. Conecte-se e tente novamente.",
+
+        "warning",
+      );
+
+      return;
     }
 
     try {
       const response = await fetch(`${API_URL}/api/register`, {
-        method: 'POST',
+        method: "POST",
+
         headers: {
-          'Content-Type': 'application/json'
+          "Content-Type": "application/json",
         },
+
         body: JSON.stringify({
           name,
+
           email,
+
           password,
-          birthDate
-        })
-      })
 
-      const contentType = response.headers.get('content-type')
+          birthDate,
+        }),
+      });
 
-      const data = contentType && contentType.includes('application/json')
-        ? await response.json()
-        : {
-            error: `Erro ${response.status}: Servidor não retornou resposta válida.`
-          }
+      const contentType = response.headers.get("content-type");
+
+      const data =
+        contentType && contentType.includes("application/json")
+          ? await response.json()
+          : {
+              error: `Erro ${response.status}: Servidor não retornou resposta válida.`,
+            };
 
       if (!response.ok) {
-        addToast(data.error || 'Erro ao criar conta.', 'error')
-        return
+        addToast(data.error || "Erro ao criar conta.", "error");
+
+        return;
       }
 
       const newUser = {
         id: data.id,
+
         name: data.name,
+
         email: data.email,
-        avatar: data.avatar || null
-      }
 
-      setUsers(prev => [...prev, newUser])
-      setCurrentUser(newUser)
-      localStorage.setItem('currentUser', JSON.stringify(newUser))
+        avatar: data.avatar || null,
+      };
 
-      clearForm()
-      setCurrentView('dashboard')
+      setUsers((prev) => [...prev, newUser]);
 
-      addToast('Conta criada com sucesso! Bem-vindo.', 'success')
+      setCurrentUser(newUser);
+
+      localStorage.setItem("currentUser", JSON.stringify(newUser));
+
+      clearForm();
+
+      setCurrentView("dashboard");
+
+      addToast("Conta criada com sucesso! Bem-vindo.", "success");
     } catch {
       addToast(
-        'Falha ao conectar com o servidor. Verifique se o backend está rodando.',
-        'error'
-      )
+        "Falha ao conectar com o servidor. Verifique se o backend está rodando.",
+
+        "error",
+      );
     }
-  }
+  };
 
   const handleLogin = async (e) => {
-    e.preventDefault()
+    e.preventDefault();
 
     if (!email || !password) {
-      addToast('Por favor, informe seu e-mail e senha.', 'error')
-      return
+      addToast("Por favor, informe seu e-mail e senha.", "error");
+
+      return;
     }
 
     if (!isOnline) {
-      const cachedUser = users.find(u => u.email.toLowerCase() === email.trim().toLowerCase())
+      const cachedUser = users.find(
+        (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
+      );
+
       if (cachedUser) {
-        setCurrentUser(cachedUser)
-        localStorage.setItem('currentUser', JSON.stringify(cachedUser))
-        clearForm()
-        setCurrentView('dashboard')
-        addToast(`Entrando em modo offline como ${cachedUser.name}.`, 'info')
-        return
+        setCurrentUser(cachedUser);
+
+        localStorage.setItem("currentUser", JSON.stringify(cachedUser));
+
+        clearForm();
+
+        setCurrentView("dashboard");
+
+        addToast(`Entrando em modo offline como ${cachedUser.name}.`, "info");
+
+        return;
       } else {
-        addToast('Você está offline. Para acessar novas contas, conecte-se à internet.', 'warning')
-        return
+        addToast(
+          "Você está offline. Para acessar novas contas, conecte-se à internet.",
+          "warning",
+        );
+
+        return;
       }
     }
 
     try {
       const response = await fetch(`${API_URL}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      })
-      
-      const contentType = response.headers.get('content-type')
-      const data = contentType && contentType.includes('application/json')
-        ? await response.json()
-        : { error: `Erro ${response.status}: Servidor não retornou resposta válida.` }
-      
+        method: "POST",
+
+        headers: { "Content-Type": "application/json" },
+
+        body: JSON.stringify({ email, password }),
+      });
+
+      const contentType = response.headers.get("content-type");
+
+      const data =
+        contentType && contentType.includes("application/json")
+          ? await response.json()
+          : {
+              error: `Erro ${response.status}: Servidor não retornou resposta válida.`,
+            };
+
       if (!response.ok) {
-        addToast(data.error || 'E-mail ou senha incorretos.', 'error')
-        return
+        addToast(data.error || "E-mail ou senha incorretos.", "error");
+
+        return;
       }
 
-      const loggedUser = { id: data.id, name: data.name, email: data.email, avatar: data.avatar || null }
-      setCurrentUser(loggedUser)
-      localStorage.setItem('currentUser', JSON.stringify(loggedUser))
-      clearForm()
-      setCurrentView('dashboard')
-      addToast('Login realizado com sucesso!', 'success')
+      const loggedUser = {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        avatar: data.avatar || null,
+      };
+
+      setCurrentUser(loggedUser);
+
+      localStorage.setItem("currentUser", JSON.stringify(loggedUser));
+
+      clearForm();
+
+      setCurrentView("dashboard");
+
+      addToast("Login realizado com sucesso!", "success");
     } catch {
-      addToast('Falha ao conectar com o servidor. Verifique se o backend está rodando.', 'error')
+      addToast(
+        "Falha ao conectar com o servidor. Verifique se o backend está rodando.",
+        "error",
+      );
     }
-  }
+  };
 
   const handleLogout = () => {
-    setCurrentUser(null)
-    localStorage.removeItem('currentUser')
-    setEditingProfile(false)
-    setCurrentView('login')
-    addToast('Você saiu do sistema.', 'info')
-  }
+    setCurrentUser(null);
+
+    localStorage.removeItem("currentUser");
+
+    setEditingProfile(false);
+
+    setCurrentView("login");
+
+    addToast("Você saiu do sistema.", "info");
+  };
 
   const applyUserUpdate = (updated) => {
-    setCurrentUser(updated)
-    localStorage.setItem('currentUser', JSON.stringify(updated))
-    setUsers(prev => prev.map(u => (u.email === updated.email ? { ...u, ...updated } : u)))
-    setPosts(prev => prev.map(p => {
-      if (p.author?.email !== updated.email) return p
-      return { ...p, author: { ...p.author, name: updated.name, avatar: updated.avatar } }
-    }))
-  }
+    setCurrentUser(updated);
+
+    localStorage.setItem("currentUser", JSON.stringify(updated));
+
+    setUsers((prev) =>
+      prev.map((u) => (u.email === updated.email ? { ...u, ...updated } : u)),
+    );
+
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.author?.email !== updated.email) return p;
+
+        return {
+          ...p,
+          author: { ...p.author, name: updated.name, avatar: updated.avatar },
+        };
+      }),
+    );
+  };
 
   const startEditProfile = () => {
-    setProfileName(currentUser.name || '')
-    setProfileAvatar(currentUser.avatar || null)
-    setEditingProfile(true)
-  }
+    setProfileName(currentUser.name || "");
+
+    setProfileAvatar(currentUser.avatar || null);
+
+    setEditingProfile(true);
+  };
 
   const handleProfilePhoto = async (e) => {
-    const file = e.target.files[0]
-    e.target.value = ''
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      addToast('Escolha uma imagem para o perfil.', 'error')
-      return
+    const file = e.target.files[0];
+
+    e.target.value = "";
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      addToast("Escolha uma imagem para o perfil.", "error");
+
+      return;
     }
+
     if (file.size > 8000000) {
-      addToast('Imagem muito grande! Máximo 8MB.', 'error')
-      return
+      addToast("Imagem muito grande! Máximo 8MB.", "error");
+
+      return;
     }
+
     try {
-      const data = await resizeImageToDataUrl(file)
-      setProfileAvatar(data)
+      const data = await resizeImageToDataUrl(file);
+
+      setProfileAvatar(data);
     } catch {
-      addToast('Não foi possível usar essa imagem.', 'error')
+      addToast("Não foi possível usar essa imagem.", "error");
     }
-  }
+  };
 
   const handleSaveProfile = async (e) => {
-    e.preventDefault()
-    const trimmedName = profileName.trim()
+    e.preventDefault();
+
+    const trimmedName = profileName.trim();
+
     if (!trimmedName) {
-      addToast('Informe um nome válido.', 'error')
-      return
+      addToast("Informe um nome válido.", "error");
+
+      return;
     }
 
     const updated = {
       ...currentUser,
+
       name: trimmedName,
-      avatar: profileAvatar || null
-    }
+
+      avatar: profileAvatar || null,
+    };
 
     if (!navigator.onLine) {
-      applyUserUpdate(updated)
-      setEditingProfile(false)
-      addToast('Perfil atualizado neste aparelho. Será sincronizado quando você estiver online.', 'warning')
-      return
+      applyUserUpdate(updated);
+
+      setEditingProfile(false);
+
+      addToast(
+        "Perfil atualizado neste aparelho. Será sincronizado quando você estiver online.",
+        "warning",
+      );
+
+      return;
     }
 
     try {
       const response = await fetch(`${API_URL}/api/profile`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PUT",
+
+        headers: { "Content-Type": "application/json" },
+
         body: JSON.stringify({
           email: currentUser.email,
+
           name: trimmedName,
-          avatar: profileAvatar || null
-        })
-      })
-      const data = await response.json()
+
+          avatar: profileAvatar || null,
+        }),
+      });
+
+      const data = await response.json();
+
       if (!response.ok) {
-        addToast(data.error || 'Erro ao salvar o perfil.', 'error')
-        return
+        addToast(data.error || "Erro ao salvar o perfil.", "error");
+
+        return;
       }
-      applyUserUpdate({ ...updated, ...data })
-      setEditingProfile(false)
-      addToast('Perfil atualizado.', 'success')
+
+      applyUserUpdate({ ...updated, ...data });
+
+      setEditingProfile(false);
+
+      addToast("Perfil atualizado.", "success");
     } catch {
-      applyUserUpdate(updated)
-      setEditingProfile(false)
-      addToast('Sem conexão. O perfil ficou salvo neste aparelho.', 'warning')
+      applyUserUpdate(updated);
+
+      setEditingProfile(false);
+
+      addToast("Sem conexão. O perfil ficou salvo neste aparelho.", "warning");
     }
-  }
+  };
 
   const readMediaFile = (file, onReady) => {
-    if (!file) return
+    if (!file) return;
 
     if (file.size > 5000000) {
-      addToast('Arquivo muito grande! Máximo 5MB.', 'error')
-      return
+      addToast("Arquivo muito grande! Máximo 5MB.", "error");
+
+      return;
     }
 
-    const reader = new FileReader()
+    const reader = new FileReader();
+
     reader.onloadend = () => {
-      onReady(reader.result, file.type.startsWith('video/') ? 'video' : 'image')
-    }
-    reader.readAsDataURL(file)
-  }
+      onReady(
+        reader.result,
+        file.type.startsWith("video/") ? "video" : "image",
+      );
+    };
+
+    reader.readAsDataURL(file);
+  };
 
   const handleMediaUpload = (e) => {
-    const file = e.target.files[0]
-    e.target.value = ''
+    const file = e.target.files[0];
+
+    e.target.value = "";
+
     readMediaFile(file, (data, type) => {
-      setPostMedia(data)
-      setPostMediaType(type)
-    })
-  }
+      setPostMedia(data);
+
+      setPostMediaType(type);
+    });
+  };
 
   const handleReplyMediaUpload = (e) => {
-    const file = e.target.files[0]
-    e.target.value = ''
+    const file = e.target.files[0];
+
+    e.target.value = "";
+
     readMediaFile(file, (data, type) => {
-      setReplyMedia(data)
-      setReplyMediaType(type)
-    })
-  }
+      setReplyMedia(data);
+
+      setReplyMediaType(type);
+    });
+  };
 
   const handleCreatePost = async (e) => {
-    e.preventDefault()
+    e.preventDefault();
+
     if (!postText.trim() && !postMedia) {
-      addToast('O post não pode estar vazio.', 'error')
-      return
+      addToast("O post não pode estar vazio.", "error");
+      return;
+    }
+
+    if (!reminderTitle.trim()) {
+      addToast("Informe o título do lembrete.", "error");
+      return;
     }
 
     if (!postDeadline) {
-      addToast('Por favor, informe a data/horário limite (prazo) do desafio.', 'error')
-      return
+      addToast(
+        "Por favor, informe a data/horário limite (prazo) do desafio.",
+        "error",
+      );
+      return;
     }
 
-    const selectedTime = new Date(postDeadline).getTime()
-    const now = Date.now()
-    if (selectedTime <= now) {
-      addToast('O prazo do desafio deve ser definido para um horário futuro.', 'error')
-      return
+    const selectedTime = new Date(postDeadline).getTime();
+
+    if (!Number.isFinite(selectedTime) || selectedTime <= Date.now()) {
+      addToast(
+        "O prazo do desafio deve ser definido para um horário futuro.",
+        "error",
+      );
+      return;
     }
-    
+
+    const reminderId = Math.floor(Math.random() * 2000000000) + 1;
+
     const newPostData = {
       author: currentUser,
       text: postText,
       deadline: postDeadline,
       media: postMedia,
       mediaType: postMediaType,
-      taggedUsers: users.filter(u => taggedUsers.includes(u.email)),
+      taggedUsers: users.filter((u) => taggedUsers.includes(u.email)),
       timestamp: new Date().toISOString(),
-      status: 'ativo' // Status para preservar o histórico ao cancelar
-    }
+      status: "ativo",
+      reminderId,
+      reminderTitle: reminderTitle.trim(),
+    };
 
-    setPostText('')
-    setPostDeadline('')
-    setPostMedia(null)
-    setPostMediaType('')
-    setTaggedUsers([])
+    const clearCreateForm = () => {
+      setPostText("");
+      setReminderTitle("");
+      setPostDeadline("");
+      setPostMedia(null);
+      setPostMediaType("");
+      setTaggedUsers([]);
+    };
 
     if (!navigator.onLine) {
-      addToOfflineQueue(newPostData)
-      addToast('Modo Offline: Desafio salvo localmente...', 'warning')
-      setCurrentView('dashboard')
-      return
+      addToOfflineQueue(newPostData);
+      clearCreateForm();
+      addToast(
+        "Modo Offline: Desafio salvo localmente. O lembrete será agendado após a sincronização.",
+        "warning",
+      );
+      setCurrentView("dashboard");
+      return;
     }
 
     try {
       const response = await fetch(`${API_URL}/api/posts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPostData)
-      })
-      const data = await response.json()
-      
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newPostData),
+      });
+
+      const data = await response.json();
+
       if (!response.ok) {
-        addToast(data.error || 'Erro ao publicar desafio.', 'error')
-        return
+        addToast(data.error || "Erro ao publicar desafio.", "error");
+        return;
       }
 
-      setPosts(prev => [data, ...prev])
-      addToast('Desafio publicado com sucesso!', 'success')
-      setCurrentView('dashboard')
-    } catch {
-      addToOfflineQueue(newPostData, 'post')
-      addToast('Sem conexão. O desafio foi guardado na fila offline e será enviado ao reconectar.', 'warning')
-      setCurrentView('dashboard')
+      setPosts((prev) => [
+        { ...data, reminderId, reminderTitle: newPostData.reminderTitle },
+        ...prev,
+      ]);
+      clearCreateForm();
+      await schedulePostReminder(newPostData);
+      addToast("Desafio publicado e lembrete agendado!", "success");
+      setCurrentView("dashboard");
+    } catch (error) {
+      console.error("Erro ao carregar lembretes:", error);
+      addToOfflineQueue(newPostData, "post");
+      clearCreateForm();
+      addToast(
+        "Sem conexão. O desafio foi guardado na fila offline e será enviado ao reconectar.",
+        "warning",
+      );
+      setCurrentView("dashboard");
     }
-  }
+  };
 
   // Função para cancelar o desafio preservando o histórico (altera status para 'cancelado')
-  const handleCancelPost = (postId) => {
-    setPosts(prev => prev.map(p => {
-      if (p.id === postId) {
-        return { ...p, status: 'cancelado' }
+
+  const handleCancelPost = async (postId) => {
+    const post = posts.find((p) => String(p.id) === String(postId));
+
+    if (post?.reminderId) {
+      try {
+        await cancelarLembrete(post.reminderId);
+        await refreshReminders();
+      } catch (error) {
+        console.error("Erro ao cancelar lembrete:", error);
+        addToast("Não foi possível cancelar o lembrete.", "error");
+        return;
       }
-      return p
-    }))
-    addToast('Desafio cancelado. O registro foi mantido no histórico.', 'info')
-  }
+    }
+
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (String(p.id) === String(postId)) {
+          return { ...p, status: "cancelado" };
+        }
+        return p;
+      }),
+    );
+
+    addToast("Desafio cancelado. O registro foi mantido no histórico.", "info");
+  };
+
+  const handleCancelReminder = async (reminderId) => {
+    try {
+      await cancelarLembrete(reminderId);
+      await refreshReminders();
+      addToast("Lembrete cancelado.", "success");
+    } catch (error) {
+      console.error("Erro ao cancelar lembrete:", error);
+      addToast("Não foi possível cancelar o lembrete.", "error");
+    }
+  };
 
   const handleCreateReply = async (e, parentId) => {
-    e.preventDefault()
+    e.preventDefault();
+
     if (!replyText.trim() && !replyMedia) {
-      addToast('A resposta não pode estar vazia.', 'error')
-      return
+      addToast("A resposta não pode estar vazia.", "error");
+
+      return;
     }
 
     const replyData = {
       author: currentUser,
-      text: replyText,
-      media: replyMedia,
-      mediaType: replyMediaType,
-      taggedUsers: [],
-      timestamp: new Date().toISOString(),
-      parentId
-    }
 
-    setReplyText('')
-    setReplyMedia(null)
-    setReplyMediaType('')
-    setActiveReplyId(null)
+      text: replyText,
+
+      media: replyMedia,
+
+      mediaType: replyMediaType,
+
+      taggedUsers: [],
+
+      timestamp: new Date().toISOString(),
+
+      parentId,
+    };
+
+    setReplyText("");
+
+    setReplyMedia(null);
+
+    setReplyMediaType("");
+
+    setActiveReplyId(null);
 
     if (!navigator.onLine) {
-      addToOfflineQueue(replyData, 'reply')
-      addToast('Modo Offline: Resposta salva localmente. Será enviada assim que reconectar!', 'warning')
-      return
+      addToOfflineQueue(replyData, "reply");
+
+      addToast(
+        "Modo Offline: Resposta salva localmente. Será enviada assim que reconectar!",
+        "warning",
+      );
+
+      return;
     }
 
     try {
       const response = await fetch(`${API_URL}/api/posts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(replyData)
-      })
-      const data = await response.json()
+        method: "POST",
+
+        headers: { "Content-Type": "application/json" },
+
+        body: JSON.stringify(replyData),
+      });
+
+      const data = await response.json();
 
       if (!response.ok) {
-        addToast(data.error || 'Erro ao enviar resposta.', 'error')
-        return
+        addToast(data.error || "Erro ao enviar resposta.", "error");
+
+        return;
       }
 
-      setPosts(prev => [data, ...prev])
-      addToast('Resposta enviada!', 'success')
+      setPosts((prev) => [data, ...prev]);
+
+      addToast("Resposta enviada!", "success");
     } catch {
-      addToOfflineQueue(replyData, 'reply')
-      addToast('Falha na rede. Resposta guardada offline e será sincronizada automaticamente.', 'warning')
+      addToOfflineQueue(replyData, "reply");
+
+      addToast(
+        "Falha na rede. Resposta guardada offline e será sincronizada automaticamente.",
+        "warning",
+      );
     }
-  }
+  };
 
   const switchView = (view) => {
-    clearForm()
-    setShowQR(false)
-    setCurrentView(view)
-  }
+    clearForm();
+
+    setShowQR(false);
+
+    setCurrentView(view);
+  };
 
   const openAppView = (view) => {
-    setCurrentView(view)
-    setActiveReplyId(null)
-  }
+    setCurrentView(view);
+
+    setActiveReplyId(null);
+  };
 
   const comingSoon = (area) => {
-    addToast(`${area} entra nas próximas atualizações. Por enquanto use o feed e o criar desafio.`, 'info')
-  }
+    addToast(
+      `${area} entra nas próximas atualizações. Por enquanto use o feed e o criar desafio.`,
+      "info",
+    );
+  };
 
-  const parentPosts = posts.filter(p => !p.parentId)
-  const visiblePosts = parentPosts.filter(post => {
-    if (feedFilter === 'mine') return post.author?.email === currentUser?.email
-    if (feedFilter === 'media') return Boolean(post.media)
-    return true
-  })
+  const parentPosts = posts.filter((p) => !p.parentId);
 
-  const telemetryLabel = isSyncing ? 'Sincronizando' : isOnline ? 'Online' : 'Offline'
-  const isAppView = Boolean(currentUser)
+  const visiblePosts = parentPosts.filter((post) => {
+    if (feedFilter === "mine") return post.author?.email === currentUser?.email;
+
+    if (feedFilter === "media") return Boolean(post.media);
+
+    return true;
+  });
+
+  const telemetryLabel = isSyncing
+    ? "Sincronizando"
+    : isOnline
+      ? "Online"
+      : "Offline";
+
+  const isAppView = Boolean(currentUser);
 
   return (
-    <div className="app-root">
-      <div className={`phone-frame ${isAppView ? 'app-frame' : 'auth-frame'}`}>
+    <div className="app-root" lang="pt-BR">
+      <div className={`phone-frame ${isAppView ? "app-frame" : "auth-frame"}`}>
         <div className="ambient ambient-a" />
+
         <div className="ambient ambient-b" />
 
-        {!currentUser && (currentView === 'login' || currentView !== 'register') && (
-          <section className="auth-screen login-screen">
-            <header className="auth-top">
-              <div className={`telemetry ${isOnline ? 'on' : 'off'}`}>
-                <span className={`status-dot ${isOnline ? 'dot-online' : 'dot-offline'}`}></span>
-                <span>{isOnline ? 'Online' : 'Offline'}</span>
-              </div>
-            </header>
+        {!currentUser &&
+          (currentView === "login" || currentView !== "register") && (
+            <section className="auth-screen login-screen">
+              <header className="auth-top">
+                <div className={`telemetry ${isOnline ? "on" : "off"}`}>
+                  <span
+                    className={`status-dot ${isOnline ? "dot-online" : "dot-offline"}`}
+                  ></span>
 
-            <div className="auth-body login-body">
-              <div className="login-hero">
-                <div className="login-brand">
-                  <span className="logo-mark glow"><Icon name="bolt" filled /></span>
-                  <h1 className="login-title">
-                    DESAFIO <span>X</span>
-                  </h1>
+                  <span>{isOnline ? "Online" : "Offline"}</span>
                 </div>
-                <h2>Entre na Arena</h2>
-                <p>Lance desafios, acompanhe o feed e responda a galera.</p>
-              </div>
+              </header>
 
-              <form className="auth-form" onSubmit={handleLogin}>
-                <label className="field">
-                  <span>E-mail</span>
-                  <div className="arena-input">
-                    <Icon name="alternate_email" />
-                    <input
-                      type="email"
-                      placeholder="seu@email.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      autoComplete="username"
-                    />
+              <div className="auth-body login-body">
+                <div className="login-hero">
+                  <div className="login-brand">
+                    <span className="logo-mark glow">
+                      <Icon name="bolt" filled />
+                    </span>
+
+                    <h1 className="login-title">
+                      DESAFIO <span>X</span>
+                    </h1>
                   </div>
-                </label>
 
-                <label className="field">
-                  <span>Senha</span>
-                  <div className="arena-input">
-                    <Icon name="lock" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      autoComplete="current-password"
-                    />
-                    <button type="button" className="icon-btn" onClick={() => setShowPassword(!showPassword)} aria-label="Mostrar senha">
-                      <Icon name={showPassword ? 'visibility_off' : 'visibility'} />
-                    </button>
-                  </div>
-                </label>
+                  <h2>Entre na Arena</h2>
 
-                <div className="auth-meta">
-                  <span className="secure-chip">
-                    <Icon name="verified_user" filled /> Sessão segura
-                  </span>
+                  <p>Lance desafios, acompanhe o feed e responda a galera.</p>
                 </div>
 
-                <button type="submit" className="btn-primary btn-fire">
-                  Entrar <Icon name="bolt" filled />
+                <form className="auth-form" onSubmit={handleLogin}>
+                  <label className="field">
+                    <span>E-mail</span>
+
+                    <div className="arena-input">
+                      <Icon name="alternate_email" />
+
+                      <input
+                        type="email"
+                        placeholder="seu@email.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        autoComplete="username"
+                      />
+                    </div>
+                  </label>
+
+                  <label className="field">
+                    <span>Senha</span>
+
+                    <div className="arena-input">
+                      <Icon name="lock" />
+
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        autoComplete="current-password"
+                      />
+
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => setShowPassword(!showPassword)}
+                        aria-label="Mostrar senha"
+                      >
+                        <Icon
+                          name={showPassword ? "visibility_off" : "visibility"}
+                        />
+                      </button>
+                    </div>
+                  </label>
+
+                  <div className="auth-meta">
+                    <span className="secure-chip">
+                      <Icon name="verified_user" filled /> Sessão segura
+                    </span>
+                  </div>
+
+                  <button type="submit" className="btn-primary btn-fire">
+                    Entrar <Icon name="bolt" filled />
+                  </button>
+                </form>
+
+                <div className="auth-divider">
+                  <span>ou continue com</span>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn-secondary qr-trigger"
+                  onClick={() => setShowQR(!showQR)}
+                >
+                  <Icon name="qr_code_scanner" />
+
+                  {showQR ? "Ocultar QR Code" : "Escanear QR Code"}
                 </button>
-              </form>
 
-              <div className="auth-divider">
-                <span>ou continue com</span>
+                {showQR && (
+                  <div className="qr-panel">
+                    <QRCode
+                      value={window.location.origin + window.location.pathname}
+                      size={180}
+                    />
+
+                    <p>
+                      Aponte a câmera para
+                      <br />
+                      instalar o app
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <button type="button" className="btn-secondary qr-trigger" onClick={() => setShowQR(!showQR)}>
-                <Icon name="qr_code_scanner" />
-                {showQR ? 'Ocultar QR Code' : 'Escanear QR Code'}
-              </button>
+              <footer className="auth-foot login-foot">
+                <p className="switch-mode">
+                  Ainda não tem conta?
+                  <button type="button" onClick={() => switchView("register")}>
+                    Cadastre-se
+                  </button>
+                </p>
 
-              {showQR && (
-                <div className="qr-panel">
-                  <QRCode value={window.location.origin + window.location.pathname} size={180} />
-                  <p>Aponte a câmera para<br />instalar o app</p>
+                <div className="legal-row">
+                  <span className="age-badge">18+</span>
+
+                  <span>Apenas para maiores de 18 anos</span>
                 </div>
-              )}
-            </div>
+              </footer>
+            </section>
+          )}
 
-            <footer className="auth-foot login-foot">
-              <p className="switch-mode">
-                Ainda não tem conta?
-                <button type="button" onClick={() => switchView('register')}>Cadastre-se</button>
-              </p>
-              <div className="legal-row">
-                <span className="age-badge">18+</span>
-                <span>Apenas para maiores de 18 anos</span>
-              </div>
-            </footer>
-          </section>
-        )}
-
-        {!currentUser && currentView === 'register' && (
+        {!currentUser && currentView === "register" && (
           <section className="auth-screen register-screen">
             <header className="auth-top">
-              <div className={`telemetry ${isOnline ? 'on' : 'off'}`}>
-                <span className={`status-dot ${isOnline ? 'dot-online' : 'dot-offline'}`}></span>
-                <span>{isOnline ? 'Online' : 'Offline'}</span>
+              <div className={`telemetry ${isOnline ? "on" : "off"}`}>
+                <span
+                  className={`status-dot ${isOnline ? "dot-online" : "dot-offline"}`}
+                ></span>
+
+                <span>{isOnline ? "Online" : "Offline"}</span>
               </div>
-              <button type="button" className="text-link" onClick={() => switchView('login')}>
+
+              <button
+                type="button"
+                className="text-link"
+                onClick={() => switchView("login")}
+              >
                 <Icon name="arrow_back" /> Entrar
               </button>
             </header>
 
             <div className="auth-body">
               <div className="brand-lockup">
-                <span className="logo-mark glow"><Icon name="bolt" filled /></span>
+                <span className="logo-mark glow">
+                  <Icon name="bolt" filled />
+                </span>
+
                 <span className="logo-wordmark">DESAFIO X</span>
               </div>
+
               <h1>Crie sua Conta</h1>
-              <p className="auth-subtitle">Entre na arena, publique desafios e responda no feed.</p>
+
+              <p className="auth-subtitle">
+                Entre na arena, publique desafios e responda no feed.
+              </p>
 
               <div className="age-banner">
                 <span className="age-badge">18+</span>
@@ -906,8 +1409,10 @@ function App() {
               <form className="auth-form" onSubmit={handleRegister}>
                 <label className="field">
                   <span>Nome completo</span>
+
                   <div className="arena-input">
                     <Icon name="person" />
+
                     <input
                       type="text"
                       placeholder="Seu nome ou como quer ser chamado"
@@ -919,8 +1424,10 @@ function App() {
 
                 <label className="field">
                   <span>E-mail</span>
+
                   <div className="arena-input">
                     <Icon name="mail" />
+
                     <input
                       type="email"
                       placeholder="seu@email.com"
@@ -932,10 +1439,13 @@ function App() {
 
                 <label className="field">
                   <span>Data de nascimento</span>
+
                   <div className="arena-input">
                     <Icon name="calendar_today" />
+
                     <input
                       type="date"
+                      lang="pt-BR"
                       value={birthDate}
                       onChange={(e) => setBirthDate(e.target.value)}
                       required
@@ -945,16 +1455,26 @@ function App() {
 
                 <label className="field">
                   <span>Senha de acesso</span>
+
                   <div className="arena-input">
                     <Icon name="key" />
+
                     <input
-                      type={showPassword ? 'text' : 'password'}
+                      type={showPassword ? "text" : "password"}
                       placeholder="Crie uma senha segura"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
-                    <button type="button" className="icon-btn" onClick={() => setShowPassword(!showPassword)} aria-label="Mostrar senha">
-                      <Icon name={showPassword ? 'visibility_off' : 'visibility'} />
+
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label="Mostrar senha"
+                    >
+                      <Icon
+                        name={showPassword ? "visibility_off" : "visibility"}
+                      />
                     </button>
                   </div>
                 </label>
@@ -966,46 +1486,85 @@ function App() {
 
               <p className="switch-mode">
                 Já tem uma conta?
-                <button type="button" onClick={() => switchView('login')}>Entrar</button>
+                <button type="button" onClick={() => switchView("login")}>
+                  Entrar
+                </button>
               </p>
             </div>
           </section>
         )}
+
         {currentUser && (
           <>
             <header className="top-bar">
               <div className="brand-lockup compact">
-                <span className="logo-mark"><Icon name="bolt" filled /></span>
+                <span className="logo-mark">
+                  <Icon name="bolt" filled />
+                </span>
+
                 <div>
                   <span className="logo-wordmark">Desafio X</span>
+
                   <span className="arena-caption">Arena de desafios</span>
                 </div>
               </div>
+
               <div className="top-bar-actions">
-                <div className={`telemetry ${isOnline ? 'on' : 'off'} ${isSyncing ? 'sync' : ''}`}>
-                  <span className={`status-dot ${isSyncing ? 'dot-syncing' : isOnline ? 'dot-online' : 'dot-offline'}`}></span>
+                <div
+                  className={`telemetry ${isOnline ? "on" : "off"} ${isSyncing ? "sync" : ""}`}
+                >
+                  <span
+                    className={`status-dot ${isSyncing ? "dot-syncing" : isOnline ? "dot-online" : "dot-offline"}`}
+                  ></span>
+
                   <span>{telemetryLabel}</span>
                 </div>
+
                 {offlineQueue.length > 0 && (
                   <span className="pending-badge">{offlineQueue.length}</span>
                 )}
+
                 {isOnline && offlineQueue.length > 0 && !isSyncing && (
-                  <button type="button" className="btn-sync-now" onClick={syncOfflineQueue}>Sync</button>
+                  <button
+                    type="button"
+                    className="btn-sync-now"
+                    onClick={syncOfflineQueue}
+                  >
+                    Sync
+                  </button>
                 )}
               </div>
             </header>
 
             <main className="app-main">
-              {(currentView === 'dashboard' || currentView === 'login') && (
+              {(currentView === "dashboard" || currentView === "login") && (
                 <>
                   <section className="filter-row" aria-label="Filtros do feed">
-                    <button type="button" className={`chip ${feedFilter === 'all' ? 'active' : ''}`} onClick={() => setFeedFilter('all')}>
-                      <Icon name="local_fire_department" filled={feedFilter === 'all'} /> Todos
+                    <button
+                      type="button"
+                      className={`chip ${feedFilter === "all" ? "active" : ""}`}
+                      onClick={() => setFeedFilter("all")}
+                    >
+                      <Icon
+                        name="local_fire_department"
+                        filled={feedFilter === "all"}
+                      />{" "}
+                      Todos
                     </button>
-                    <button type="button" className={`chip ${feedFilter === 'media' ? 'active' : ''}`} onClick={() => setFeedFilter('media')}>
+
+                    <button
+                      type="button"
+                      className={`chip ${feedFilter === "media" ? "active" : ""}`}
+                      onClick={() => setFeedFilter("media")}
+                    >
                       <Icon name="photo_camera" /> Com mídia
                     </button>
-                    <button type="button" className={`chip ${feedFilter === 'mine' ? 'active' : ''}`} onClick={() => setFeedFilter('mine')}>
+
+                    <button
+                      type="button"
+                      className={`chip ${feedFilter === "mine" ? "active" : ""}`}
+                      onClick={() => setFeedFilter("mine")}
+                    >
                       <Icon name="person" /> Meus
                     </button>
                   </section>
@@ -1013,53 +1572,115 @@ function App() {
                   {visiblePosts.length === 0 ? (
                     <div className="empty-timeline-card">
                       <Icon name="swords" />
-                      <p className="empty-timeline">Nenhum desafio por aqui. Toque no raio para publicar o primeiro.</p>
+
+                      <p className="empty-timeline">
+                        Nenhum desafio por aqui. Toque no raio para publicar o
+                        primeiro.
+                      </p>
                     </div>
                   ) : (
-                    visiblePosts.map(post => {
-                      const replies = posts.filter(p => String(p.parentId) === String(post.id))
-                      const isCancelled = post.status === 'cancelado'
+                    visiblePosts.map((post) => {
+                      const replies = posts.filter(
+                        (p) => String(p.parentId) === String(post.id),
+                      );
+
+                      const isCancelled = post.status === "cancelado";
 
                       return (
-                        <article key={post.id} className={`post-card ${post.pendingSync ? 'post-pending' : ''} ${isCancelled ? 'post-cancelled' : ''}`}>
+                        <article
+                          key={post.id}
+                          className={`post-card ${post.pendingSync ? "post-pending" : ""} ${isCancelled ? "post-cancelled" : ""}`}
+                        >
                           <div className="post-header">
                             <div className="author-info">
-                              <UserAvatar user={users.find(u => u.email === post.author?.email) || post.author} />
+                              <UserAvatar
+                                user={
+                                  users.find(
+                                    (u) => u.email === post.author?.email,
+                                  ) || post.author
+                                }
+                              />
+
                               <div className="author-details">
                                 <div className="author-name-row">
-                                  <strong>{post.author?.name || 'Anônimo'}</strong>
-                                  {post.pendingSync && <span className="badge-pending-sync">Pendente</span>}
-                                  {isCancelled && <span className="badge-cancelled" style={{color: '#ff4d4f', fontSize: '11px', marginLeft: '6px'}}>[Cancelado - Histórico Preservado]</span>}
+                                  <strong>
+                                    {post.author?.name || "Anônimo"}
+                                  </strong>
+
+                                  {post.pendingSync && (
+                                    <span className="badge-pending-sync">
+                                      Pendente
+                                    </span>
+                                  )}
+
+                                  {isCancelled && (
+                                    <span
+                                      className="badge-cancelled"
+                                      style={{
+                                        color: "#ff4d4f",
+                                        fontSize: "11px",
+                                        marginLeft: "6px",
+                                      }}
+                                    >
+                                      [Cancelado - Histórico Preservado]
+                                    </span>
+                                  )}
                                 </div>
-                                <span className="timestamp">{new Date(post.timestamp).toLocaleString()}</span>
+
+                                <span className="timestamp">
+                                  {new Date(post.timestamp).toLocaleString()}
+                                </span>
                               </div>
                             </div>
 
                             {/* Botão para cancelar o desafio preservando histórico */}
-                            {post.author?.email === currentUser.email && !isCancelled && (
-                              <button type="button" className="btn-secondary btn-sm" onClick={() => handleCancelPost(post.id)} style={{fontSize: '11px', padding: '4px 8px'}}>
-                                Cancelar
-                              </button>
-                            )}
+
+                            {post.author?.email === currentUser.email &&
+                              !isCancelled && (
+                                <button
+                                  type="button"
+                                  className="btn-secondary btn-sm"
+                                  onClick={() => handleCancelPost(post.id)}
+                                  style={{
+                                    fontSize: "11px",
+                                    padding: "4px 8px",
+                                  }}
+                                >
+                                  Cancelar
+                                </button>
+                              )}
                           </div>
 
                           {post.deadline && (
-                            <div className="post-deadline" style={{fontSize: '12px', color: '#a0aec0', margin: '4px 0'}}>
-                              ⏰ Prazo: {new Date(post.deadline).toLocaleString()}
+                            <div
+                              className="post-deadline"
+                              style={{
+                                fontSize: "12px",
+                                color: "#a0aec0",
+                                margin: "4px 0",
+                              }}
+                            >
+                              ⏰ Prazo:{" "}
+                              {new Date(post.deadline).toLocaleString()}
                             </div>
                           )}
 
-                          {post.taggedUsers && post.taggedUsers.length > 0 && !isCancelled && (
-                            <div className="post-tags">
-                              <strong>Com:</strong> {post.taggedUsers.map(u => u.name).join(', ')}
-                            </div>
-                          )}
+                          {post.taggedUsers &&
+                            post.taggedUsers.length > 0 &&
+                            !isCancelled && (
+                              <div className="post-tags">
+                                <strong>Com:</strong>{" "}
+                                {post.taggedUsers.map((u) => u.name).join(", ")}
+                              </div>
+                            )}
 
-                          {post.text && <p className="post-text">{post.text}</p>}
+                          {post.text && (
+                            <p className="post-text">{post.text}</p>
+                          )}
 
                           {post.media && !isCancelled && (
                             <div className="post-media">
-                              {post.mediaType === 'video' ? (
+                              {post.mediaType === "video" ? (
                                 <video src={post.media} controls />
                               ) : (
                                 <img src={post.media} alt="Mídia do desafio" />
@@ -1070,25 +1691,56 @@ function App() {
                           <div className="replies-section">
                             {replies.length > 0 && (
                               <div className="replies-list">
-                                {replies.map(reply => (
-                                  <div key={reply.id} className={`reply-card ${reply.pendingSync ? 'reply-pending' : ''}`}>
+                                {replies.map((reply) => (
+                                  <div
+                                    key={reply.id}
+                                    className={`reply-card ${reply.pendingSync ? "reply-pending" : ""}`}
+                                  >
                                     <div className="reply-author">
-                                      <UserAvatar user={users.find(u => u.email === reply.author?.email) || reply.author} size="avatar-sm" />
+                                      <UserAvatar
+                                        user={
+                                          users.find(
+                                            (u) =>
+                                              u.email === reply.author?.email,
+                                          ) || reply.author
+                                        }
+                                        size="avatar-sm"
+                                      />
+
                                       <div className="author-details">
                                         <div className="author-name-row">
-                                          <strong>{reply.author?.name || 'Anônimo'}</strong>
-                                          {reply.pendingSync && <span className="badge-pending-sync-sm">Pendente</span>}
+                                          <strong>
+                                            {reply.author?.name || "Anônimo"}
+                                          </strong>
+
+                                          {reply.pendingSync && (
+                                            <span className="badge-pending-sync-sm">
+                                              Pendente
+                                            </span>
+                                          )}
                                         </div>
-                                        <span className="timestamp">{new Date(reply.timestamp).toLocaleString()}</span>
+
+                                        <span className="timestamp">
+                                          {new Date(
+                                            reply.timestamp,
+                                          ).toLocaleString()}
+                                        </span>
                                       </div>
                                     </div>
-                                    {reply.text && <p className="post-text">{reply.text}</p>}
+
+                                    {reply.text && (
+                                      <p className="post-text">{reply.text}</p>
+                                    )}
+
                                     {reply.media && (
                                       <div className="post-media">
-                                        {reply.mediaType === 'video' ? (
+                                        {reply.mediaType === "video" ? (
                                           <video src={reply.media} controls />
                                         ) : (
-                                          <img src={reply.media} alt="Resposta" />
+                                          <img
+                                            src={reply.media}
+                                            alt="Resposta"
+                                          />
                                         )}
                                       </div>
                                     )}
@@ -1103,38 +1755,82 @@ function App() {
                                   type="button"
                                   className="btn-primary reply-cta"
                                   onClick={() => {
-                                    setActiveReplyId(activeReplyId === post.id ? null : post.id)
-                                    setReplyText('')
-                                    setReplyMedia(null)
-                                    setReplyMediaType('')
+                                    setActiveReplyId(
+                                      activeReplyId === post.id
+                                        ? null
+                                        : post.id,
+                                    );
+
+                                    setReplyText("");
+
+                                    setReplyMedia(null);
+
+                                    setReplyMediaType("");
                                   }}
                                 >
-                                  <Icon name={activeReplyId === post.id ? 'close' : 'reply'} />
-                                  {activeReplyId === post.id ? 'Cancelar' : `Responder${replies.length > 0 ? ` (${replies.length})` : ''}`}
+                                  <Icon
+                                    name={
+                                      activeReplyId === post.id
+                                        ? "close"
+                                        : "reply"
+                                    }
+                                  />
+
+                                  {activeReplyId === post.id
+                                    ? "Cancelar"
+                                    : `Responder${replies.length > 0 ? ` (${replies.length})` : ""}`}
                                 </button>
 
                                 {activeReplyId === post.id && (
-                                  <form className="reply-form" onSubmit={(e) => handleCreateReply(e, post.id)}>
+                                  <form
+                                    className="reply-form"
+                                    onSubmit={(e) =>
+                                      handleCreateReply(e, post.id)
+                                    }
+                                  >
                                     <textarea
                                       className="post-input reply-input"
-                                      placeholder={isOnline ? 'Escreva sua resposta ao desafio...' : 'Escreva sua resposta (será salva offline)...'}
+                                      placeholder={
+                                        isOnline
+                                          ? "Escreva sua resposta ao desafio..."
+                                          : "Escreva sua resposta (será salva offline)..."
+                                      }
                                       value={replyText}
-                                      onChange={(e) => setReplyText(e.target.value)}
+                                      onChange={(e) =>
+                                        setReplyText(e.target.value)
+                                      }
                                     />
+
                                     {replyMedia && (
                                       <div className="media-preview">
-                                        {replyMediaType === 'video' ? (
+                                        {replyMediaType === "video" ? (
                                           <video src={replyMedia} controls />
                                         ) : (
                                           <img src={replyMedia} alt="Preview" />
                                         )}
-                                        <button type="button" onClick={() => { setReplyMedia(null); setReplyMediaType('') }}>Remover</button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setReplyMedia(null);
+                                            setReplyMediaType("");
+                                          }}
+                                        >
+                                          Remover
+                                        </button>
                                       </div>
                                     )}
+
                                     <div className="reply-actions">
-                                      <MediaPickers onChange={handleReplyMediaUpload} />
-                                      <button type="submit" className="btn-primary reply-submit-btn">
-                                        {isOnline ? 'Enviar' : 'Salvar offline'}
+                                      <MediaPickers
+                                        onChange={handleReplyMediaUpload}
+                                      />
+
+                                      <button
+                                        type="submit"
+                                        className="btn-primary reply-submit-btn"
+                                      >
+                                        {isOnline ? "Enviar" : "Salvar offline"}
                                       </button>
                                     </div>
                                   </form>
@@ -1143,65 +1839,117 @@ function App() {
                             )}
                           </div>
                         </article>
-                      )
+                      );
                     })
                   )}
                 </>
               )}
 
-          {currentView === 'create' && (
+              {currentView === "create" && (
                 <form className="create-screen" onSubmit={handleCreatePost}>
                   <div className="create-top">
-                    <button type="button" className="icon-round" onClick={() => openAppView('dashboard')} aria-label="Fechar">
+                    <button
+                      type="button"
+                      className="icon-round"
+                      onClick={() => openAppView("dashboard")}
+                      aria-label="Fechar"
+                    >
                       <Icon name="close" />
                     </button>
+
                     <h1>Novo desafio</h1>
                   </div>
 
                   <section className="create-block">
-                    <label className="block-label" htmlFor="challenge-title">Meta do desafio *</label>
+                    <label className="block-label" htmlFor="challenge-title">
+                      Meta do desafio *
+                    </label>
+
                     <textarea
                       id="challenge-title"
                       className="post-input"
-                      placeholder={isOnline ? 'Qual o seu desafio de hoje?' : 'Qual o seu desafio de hoje? (será salvo offline)'}
+                      placeholder={
+                        isOnline
+                          ? "Qual o seu desafio de hoje?"
+                          : "Qual o seu desafio de hoje? (será salvo offline)"
+                      }
                       value={postText}
                       onChange={(e) => setPostText(e.target.value)}
                     />
                   </section>
 
                   {/* CAMPO DE PRAZO / DATA E HORA FUTURA  */}
+
                   <section className="create-block">
-                    <label className="block-label" htmlFor="challenge-deadline">Prazo limite (Data e Hora futura) *</label>
-                    <input 
+                    <label className="block-label" htmlFor="challenge-deadline">
+                      Prazo limite (Data e Hora futura) *
+                    </label>
+
+                    <input
                       id="challenge-deadline"
-                      type="datetime-local" 
-                      className="post-input" 
-                      value={postDeadline} 
-                      onChange={(e) => setPostDeadline(e.target.value)} 
-                      required 
-                      style={{padding: '10px', borderRadius: '8px', border: '1px solid #333', background: '#1a1a1a', color: '#fff', width: '100%'}}
+                      type="datetime-local"
+                      lang="pt-BR"
+                      className="post-input"
+                      value={postDeadline}
+                      onChange={(e) => setPostDeadline(e.target.value)}
+                      required
                     />
                   </section>
 
                   <section className="create-block">
                     <div className="block-label-row">
-                      <span className="block-label">Foto ou vídeo (Recurso Nativo)</span>
+                      <span className="block-label">
+                        Foto ou vídeo (Recurso Nativo)
+                      </span>
+
                       <span className="hint">Até 5MB</span>
                     </div>
 
                     {/* Prévia da Mídia Capturada */}
+
                     {postMedia && (
-                      <div className="media-preview" style={{ marginBottom: '15px', textAlign: 'center' }}>
-                        {postMediaType === 'video' ? (
-                          <video src={postMedia} controls style={{ width: '100%', maxHeight: '200px', borderRadius: '8px' }} />
+                      <div
+                        className="media-preview"
+                        style={{ marginBottom: "15px", textAlign: "center" }}
+                      >
+                        {postMediaType === "video" ? (
+                          <video
+                            src={postMedia}
+                            controls
+                            style={{
+                              width: "100%",
+                              maxHeight: "200px",
+                              borderRadius: "8px",
+                            }}
+                          />
                         ) : (
-                          <img src={postMedia} alt="Prévia da captura" style={{ width: '100%', maxHeight: '200px', objectFit: 'contain', borderRadius: '8px' }} />
+                          <img
+                            src={postMedia}
+                            alt="Prévia da captura"
+                            style={{
+                              width: "100%",
+                              maxHeight: "200px",
+                              objectFit: "contain",
+                              borderRadius: "8px",
+                            }}
+                          />
                         )}
-                        <div style={{ display: 'flex', gap: '10px', marginTop: '10px', justifyContent: 'center' }}>
-                          <button 
-                            type="button" 
-                            className="btn-secondary" 
-                            onClick={() => { setPostMedia(null); setPostMediaType(''); }}
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "10px",
+                            marginTop: "10px",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => {
+                              setPostMedia(null);
+                              setPostMediaType("");
+                            }}
                             style={{ flex: 1 }}
                           >
                             <Icon name="refresh" /> Refazer / Cancelar
@@ -1211,10 +1959,13 @@ function App() {
                     )}
 
                     {/* Botões nativos de Câmera e Galeria */}
+
                     {!postMedia && (
                       <div className="upload-drop">
                         <Icon name="photo_camera" />
+
                         <p>Tirar foto, gravar ou escolher da galeria</p>
+
                         <MediaPickers onChange={handleMediaUpload} />
                       </div>
                     )}
@@ -1222,47 +1973,146 @@ function App() {
 
                   <section className="create-block">
                     <span className="block-label">Marcar amigos</span>
+
                     <div className="tagged-users-list">
-                      {users.filter(u => u.email !== currentUser.email).map(u => (
-                        <label key={u.email} className={`tag-chip ${taggedUsers.includes(u.email) ? 'selected' : ''}`}>
-                          <input
-                            type="checkbox"
-                            checked={taggedUsers.includes(u.email)}
-                            onChange={(e) => {
-                              if (e.target.checked) setTaggedUsers(prev => [...prev, u.email])
-                              else setTaggedUsers(prev => prev.filter(email => email !== u.email))
-                            }}
-                          />
-                          <UserAvatar user={u} size="avatar-sm" />
-                          {u.name}
-                        </label>
-                      ))}
-                      {users.filter(u => u.email !== currentUser.email).length === 0 && (
-                        <small className="no-users-hint">Nenhum outro usuário cadastrado.</small>
+                      {users
+                        .filter((u) => u.email !== currentUser.email)
+                        .map((u) => (
+                          <label
+                            key={u.email}
+                            className={`tag-chip ${taggedUsers.includes(u.email) ? "selected" : ""}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={taggedUsers.includes(u.email)}
+                              onChange={(e) => {
+                                if (e.target.checked)
+                                  setTaggedUsers((prev) => [...prev, u.email]);
+                                else
+                                  setTaggedUsers((prev) =>
+                                    prev.filter((email) => email !== u.email),
+                                  );
+                              }}
+                            />
+
+                            <UserAvatar user={u} size="avatar-sm" />
+
+                            {u.name}
+                          </label>
+                        ))}
+
+                      {users.filter((u) => u.email !== currentUser.email)
+                        .length === 0 && (
+                        <small className="no-users-hint">
+                          Nenhum outro usuário cadastrado.
+                        </small>
                       )}
                     </div>
                   </section>
 
                   <button type="submit" className="btn-primary sticky-cta">
                     <Icon name="bolt" filled />
-                    {isOnline ? 'Publicar desafio' : 'Salvar desafio offline'}
+
+                    {isOnline ? "Publicar desafio" : "Salvar desafio offline"}
                   </button>
                 </form>
               )}
 
-              {currentView === 'profile' && (
+              {currentView === "reminders" && (
+                <section className="profile-screen">
+                  <div className="create-top">
+                    <button
+                      type="button"
+                      className="icon-round"
+                      onClick={() => openAppView("dashboard")}
+                      aria-label="Voltar"
+                    >
+                      <Icon name="arrow_back" />
+                    </button>
+                    <h1>Meus lembretes</h1>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={refreshReminders}
+                    >
+                      <Icon name="refresh" /> Atualizar
+                    </button>
+                  </div>
+
+                  {scheduledReminders.length === 0 ? (
+                    <div className="empty-timeline-card">
+                      <Icon name="notifications_off" />
+                      <p className="empty-timeline">
+                        Você ainda não tem lembretes agendados.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="replies-list">
+                      {scheduledReminders.map((reminder) => (
+                        <article className="post-card" key={reminder.id}>
+                          <div className="post-header">
+                            <div className="author-details">
+                              <strong>{reminder.title || "Lembrete"}</strong>
+                              <span className="timestamp">
+                                {reminder.body || "Sem mensagem"}
+                              </span>
+                              {reminder.schedule?.at && (
+                                <span className="timestamp">
+                                  {new Date(
+                                    reminder.schedule.at,
+                                  ).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              className="btn-secondary btn-sm"
+                              onClick={() => handleCancelReminder(reminder.id)}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {currentView === "profile" && (
                 <section className="profile-screen">
                   <div className="profile-hero">
                     <div className="avatar-edit">
-                      <UserAvatar user={editingProfile ? { ...currentUser, avatar: profileAvatar, name: profileName } : currentUser} size="xl" />
+                      <UserAvatar
+                        user={
+                          editingProfile
+                            ? {
+                                ...currentUser,
+                                avatar: profileAvatar,
+                                name: profileName,
+                              }
+                            : currentUser
+                        }
+                        size="xl"
+                      />
                     </div>
+
                     {editingProfile ? (
-                      <form className="profile-edit-form" onSubmit={handleSaveProfile}>
-                        <MediaPickers mode="photo" onChange={handleProfilePhoto} />
+                      <form
+                        className="profile-edit-form"
+                        onSubmit={handleSaveProfile}
+                      >
+                        <MediaPickers
+                          mode="photo"
+                          onChange={handleProfilePhoto}
+                        />
+
                         <label className="field">
                           <span>Nome</span>
+
                           <div className="arena-input">
                             <Icon name="person" />
+
                             <input
                               type="text"
                               value={profileName}
@@ -1271,23 +2121,45 @@ function App() {
                             />
                           </div>
                         </label>
+
                         <p className="profile-email">{currentUser.email}</p>
-                        <button type="submit" className="btn-primary">Salvar perfil</button>
-                        <button type="button" className="btn-secondary" onClick={() => setEditingProfile(false)}>
+
+                        <button type="submit" className="btn-primary">
+                          Salvar perfil
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => setEditingProfile(false)}
+                        >
                           Cancelar
                         </button>
                       </form>
                     ) : (
                       <>
                         <h1>{currentUser.name}</h1>
+
                         <p>{currentUser.email}</p>
-                        <button type="button" className="btn-secondary" onClick={startEditProfile}>
+
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={startEditProfile}
+                        >
                           <Icon name="edit" /> Editar perfil
                         </button>
                       </>
                     )}
                   </div>
-                  <button type="button" className="btn-primary btn-danger" onClick={handleLogout}>Sair</button>
+
+                  <button
+                    type="button"
+                    className="btn-primary btn-danger"
+                    onClick={handleLogout}
+                  >
+                    Sair
+                  </button>
                 </section>
               )}
             </main>
@@ -1296,30 +2168,59 @@ function App() {
               <div className="bottom-nav-inner">
                 <button
                   type="button"
-                  className={`nav-item ${(currentView === 'dashboard' || currentView === 'login') ? 'active' : ''}`}
-                  onClick={() => openAppView('dashboard')}
+                  className={`nav-item ${currentView === "dashboard" || currentView === "login" ? "active" : ""}`}
+                  onClick={() => openAppView("dashboard")}
                 >
-                  <Icon name="swords" filled={currentView === 'dashboard' || currentView === 'login'} />
+                  <Icon
+                    name="swords"
+                    filled={
+                      currentView === "dashboard" || currentView === "login"
+                    }
+                  />
+
                   <span>Arena</span>
                 </button>
-                <button type="button" className="nav-item" onClick={() => comingSoon('Amigos')}>
-                  <Icon name="group" />
-                  <span>Amigos</span>
-                </button>
-                <button type="button" className="nav-item nav-fab-wrap" onClick={() => openAppView('create')} aria-label="Criar desafio">
-                  <span className="nav-fab"><Icon name="bolt" filled /></span>
-                  <span>Desafiar</span>
-                </button>
-                <button type="button" className="nav-item" onClick={() => comingSoon('Parties')}>
-                  <Icon name="groups" />
-                  <span>Parties</span>
-                </button>
+
                 <button
                   type="button"
-                  className={`nav-item ${currentView === 'profile' ? 'active' : ''}`}
-                  onClick={() => openAppView('profile')}
+                  className="nav-item"
+                  onClick={() => comingSoon("Amigos")}
                 >
-                  <Icon name="person" filled={currentView === 'profile'} />
+                  <Icon name="group" />
+
+                  <span>Amigos</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="nav-item nav-fab-wrap"
+                  onClick={() => openAppView("create")}
+                  aria-label="Criar desafio"
+                >
+                  <span className="nav-fab">
+                    <Icon name="bolt" filled />
+                  </span>
+
+                  <span>Desafiar</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="nav-item"
+                  onClick={() => comingSoon("Parties")}
+                >
+                  <Icon name="groups" />
+
+                  <span>Parties</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`nav-item ${currentView === "profile" ? "active" : ""}`}
+                  onClick={() => openAppView("profile")}
+                >
+                  <Icon name="person" filled={currentView === "profile"} />
+
                   <span>Perfil</span>
                 </button>
               </div>
@@ -1329,15 +2230,21 @@ function App() {
       </div>
 
       <div className="toast-container">
-        {toasts.map(toast => (
+        {toasts.map((toast) => (
           <div key={toast.id} className={`toast ${toast.type}`}>
             <span>{toast.message}</span>
-            <button onClick={() => removeToast(toast.id)} className="toast-close">&times;</button>
+
+            <button
+              onClick={() => removeToast(toast.id)}
+              className="toast-close"
+            >
+              &times;
+            </button>
           </div>
         ))}
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

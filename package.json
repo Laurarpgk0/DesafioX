@@ -14,9 +14,9 @@
     "deploy": "npx gh-pages -d dist"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.2",
-    "@capacitor/cli": "^8.5.2",
-    "@capacitor/core": "^8.5.2",
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/local-notifications": "^8.3.1",
     "bcryptjs": "^3.0.3",
     "concurrently": "^9.2.1",
     "dotenv": "^16.3.1",
@@ -28,6 +28,7 @@
     "react-qr-code": "^2.0.18"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
     "@eslint/js": "^9.39.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
