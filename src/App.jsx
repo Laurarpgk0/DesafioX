@@ -152,6 +152,7 @@ function App() {
   })
 
   const [postText, setPostText] = useState('')
+  const [postDeadline, setPostDeadline] = useState('') // Campo de prazo/data futura 
   const [postMedia, setPostMedia] = useState(null)
   const [postMediaType, setPostMediaType] = useState('')
   const [taggedUsers, setTaggedUsers] = useState([])
@@ -278,11 +279,11 @@ function App() {
 
     const successCount = queueCopy.length - remaining.length - failed.length;
     if (successCount > 0) {
-      addToast(`âœ… ${successCount} item(ns) sincronizados.`, 'success');
+      addToast(`✅ ${successCount} item(ns) sincronizados.`, 'success');
     }
     if (failed.length > 0) {
       localStorage.setItem('desafiox_failed_queue', JSON.stringify(failed));
-      addToast(`¸ ${failed.length} item(ns) falharam permanentemente. Verifique e tente novamente.`, 'error');
+      addToast(`⚠️ ${failed.length} item(ns) falharam permanentemente. Verifique e tente novamente.`, 'error');
     }
   }, [addToast]);
 
@@ -362,100 +363,95 @@ function App() {
   }
 
   const calculateAge = (birthDate) => {
-  const [year, month, day] = birthDate.split('-').map(Number)
-
-  const today = new Date()
-
-  let age = today.getFullYear() - year
-
-  const birthdayNotReached =
-    today.getMonth() + 1 < month ||
-    (today.getMonth() + 1 === month && today.getDate() < day)
-
-  if (birthdayNotReached) {
-    age--
+    const [year, month, day] = birthDate.split('-').map(Number)
+    const today = new Date()
+    let age = today.getFullYear() - year
+    const birthdayNotReached =
+      today.getMonth() + 1 < month ||
+      (today.getMonth() + 1 === month && today.getDate() < day)
+    if (birthdayNotReached) {
+      age--
+    }
+    return age
   }
 
-  return age
-}
+  const handleRegister = async (e) => {
+    e.preventDefault()
 
-const handleRegister = async (e) => {
-  e.preventDefault()
-
-  if (!name || !email || !password) {
-    addToast('Por favor, preencha todos os campos.', 'error')
-    return
-  }
-
-  if (!birthDate) {
-    addToast('Por favor, informe sua data de nascimento.', 'error')
-    return
-  }
-
-  const age = calculateAge(birthDate)
-
-  if (age < 18) {
-    addToast('Você deve ter pelo menos 18 anos para se registrar.', 'error')
-    return
-  }
-
-  if (!isOnline) {
-    addToast(
-      'Cadastro requer conexão com a internet. Conecte-se e tente novamente.',
-      'warning'
-    )
-    return
-  }
-
-  try {
-    const response = await fetch(`${API_URL}/api/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name,
-        email,
-        password,
-        birthDate
-      })
-    })
-
-    const contentType = response.headers.get('content-type')
-
-    const data = contentType && contentType.includes('application/json')
-      ? await response.json()
-      : {
-          error: `Erro ${response.status}: Servidor não retornou resposta válida.`
-        }
-
-    if (!response.ok) {
-      addToast(data.error || 'Erro ao criar conta.', 'error')
+    if (!name || !email || !password) {
+      addToast('Por favor, preencha todos os campos.', 'error')
       return
     }
 
-    const newUser = {
-      id: data.id,
-      name: data.name,
-      email: data.email,
-      avatar: data.avatar || null
+    if (!birthDate) {
+      addToast('Por favor, informe sua data de nascimento.', 'error')
+      return
     }
 
-    setUsers(prev => [...prev, newUser])
-    setCurrentUser(newUser)
-    localStorage.setItem('currentUser', JSON.stringify(newUser))
+    const age = calculateAge(birthDate)
 
-    clearForm()
-    setCurrentView('dashboard')
+    if (age < 18) {
+      addToast('Você deve ter pelo menos 18 anos para se registrar.', 'error')
+      return
+    }
 
-    addToast('Conta criada com sucesso! Bem-vindo.', 'success')
-  } catch {
-    addToast(
-      'Falha ao conectar com o servidor. Verifique se o backend está rodando.',
-      'error'
-    )
+    if (!isOnline) {
+      addToast(
+        'Cadastro requer conexão com a internet. Conecte-se e tente novamente.',
+        'warning'
+      )
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          birthDate
+        })
+      })
+
+      const contentType = response.headers.get('content-type')
+
+      const data = contentType && contentType.includes('application/json')
+        ? await response.json()
+        : {
+            error: `Erro ${response.status}: Servidor não retornou resposta válida.`
+          }
+
+      if (!response.ok) {
+        addToast(data.error || 'Erro ao criar conta.', 'error')
+        return
+      }
+
+      const newUser = {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        avatar: data.avatar || null
+      }
+
+      setUsers(prev => [...prev, newUser])
+      setCurrentUser(newUser)
+      localStorage.setItem('currentUser', JSON.stringify(newUser))
+
+      clearForm()
+      setCurrentView('dashboard')
+
+      addToast('Conta criada com sucesso! Bem-vindo.', 'success')
+    } catch {
+      addToast(
+        'Falha ao conectar com o servidor. Verifique se o backend está rodando.',
+        'error'
+      )
+    }
   }
-}
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -637,17 +633,32 @@ const handleRegister = async (e) => {
       addToast('O post não pode estar vazio.', 'error')
       return
     }
+
+    if (!postDeadline) {
+      addToast('Por favor, informe a data/horário limite (prazo) do desafio.', 'error')
+      return
+    }
+
+    const selectedTime = new Date(postDeadline).getTime()
+    const now = Date.now()
+    if (selectedTime <= now) {
+      addToast('O prazo do desafio deve ser definido para um horário futuro.', 'error')
+      return
+    }
     
     const newPostData = {
       author: currentUser,
       text: postText,
+      deadline: postDeadline,
       media: postMedia,
       mediaType: postMediaType,
       taggedUsers: users.filter(u => taggedUsers.includes(u.email)),
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      status: 'ativo' // Status para preservar o histórico ao cancelar
     }
 
     setPostText('')
+    setPostDeadline('')
     setPostMedia(null)
     setPostMediaType('')
     setTaggedUsers([])
@@ -680,6 +691,17 @@ const handleRegister = async (e) => {
       addToast('Sem conexão. O desafio foi guardado na fila offline e será enviado ao reconectar.', 'warning')
       setCurrentView('dashboard')
     }
+  }
+
+  // Função para cancelar o desafio preservando o histórico (altera status para 'cancelado')
+  const handleCancelPost = (postId) => {
+    setPosts(prev => prev.map(p => {
+      if (p.id === postId) {
+        return { ...p, status: 'cancelado' }
+      }
+      return p
+    }))
+    addToast('Desafio cancelado. O registro foi mantido no histórico.', 'info')
   }
 
   const handleCreateReply = async (e, parentId) => {
@@ -996,8 +1018,10 @@ const handleRegister = async (e) => {
                   ) : (
                     visiblePosts.map(post => {
                       const replies = posts.filter(p => String(p.parentId) === String(post.id))
+                      const isCancelled = post.status === 'cancelado'
+
                       return (
-                        <article key={post.id} className={`post-card ${post.pendingSync ? 'post-pending' : ''}`}>
+                        <article key={post.id} className={`post-card ${post.pendingSync ? 'post-pending' : ''} ${isCancelled ? 'post-cancelled' : ''}`}>
                           <div className="post-header">
                             <div className="author-info">
                               <UserAvatar user={users.find(u => u.email === post.author?.email) || post.author} />
@@ -1005,13 +1029,27 @@ const handleRegister = async (e) => {
                                 <div className="author-name-row">
                                   <strong>{post.author?.name || 'Anônimo'}</strong>
                                   {post.pendingSync && <span className="badge-pending-sync">Pendente</span>}
+                                  {isCancelled && <span className="badge-cancelled" style={{color: '#ff4d4f', fontSize: '11px', marginLeft: '6px'}}>[Cancelado - Histórico Preservado]</span>}
                                 </div>
                                 <span className="timestamp">{new Date(post.timestamp).toLocaleString()}</span>
                               </div>
                             </div>
+
+                            {/* Botão para cancelar o desafio preservando histórico */}
+                            {post.author?.email === currentUser.email && !isCancelled && (
+                              <button type="button" className="btn-secondary btn-sm" onClick={() => handleCancelPost(post.id)} style={{fontSize: '11px', padding: '4px 8px'}}>
+                                Cancelar
+                              </button>
+                            )}
                           </div>
 
-                          {post.taggedUsers && post.taggedUsers.length > 0 && (
+                          {post.deadline && (
+                            <div className="post-deadline" style={{fontSize: '12px', color: '#a0aec0', margin: '4px 0'}}>
+                              ⏰ Prazo: {new Date(post.deadline).toLocaleString()}
+                            </div>
+                          )}
+
+                          {post.taggedUsers && post.taggedUsers.length > 0 && !isCancelled && (
                             <div className="post-tags">
                               <strong>Com:</strong> {post.taggedUsers.map(u => u.name).join(', ')}
                             </div>
@@ -1019,7 +1057,7 @@ const handleRegister = async (e) => {
 
                           {post.text && <p className="post-text">{post.text}</p>}
 
-                          {post.media && (
+                          {post.media && !isCancelled && (
                             <div className="post-media">
                               {post.mediaType === 'video' ? (
                                 <video src={post.media} controls />
@@ -1059,45 +1097,49 @@ const handleRegister = async (e) => {
                               </div>
                             )}
 
-                            <button
-                              type="button"
-                              className="btn-primary reply-cta"
-                              onClick={() => {
-                                setActiveReplyId(activeReplyId === post.id ? null : post.id)
-                                setReplyText('')
-                                setReplyMedia(null)
-                                setReplyMediaType('')
-                              }}
-                            >
-                              <Icon name={activeReplyId === post.id ? 'close' : 'reply'} />
-                              {activeReplyId === post.id ? 'Cancelar' : `Responder${replies.length > 0 ? ` (${replies.length})` : ''}`}
-                            </button>
+                            {!isCancelled && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn-primary reply-cta"
+                                  onClick={() => {
+                                    setActiveReplyId(activeReplyId === post.id ? null : post.id)
+                                    setReplyText('')
+                                    setReplyMedia(null)
+                                    setReplyMediaType('')
+                                  }}
+                                >
+                                  <Icon name={activeReplyId === post.id ? 'close' : 'reply'} />
+                                  {activeReplyId === post.id ? 'Cancelar' : `Responder${replies.length > 0 ? ` (${replies.length})` : ''}`}
+                                </button>
 
-                            {activeReplyId === post.id && (
-                              <form className="reply-form" onSubmit={(e) => handleCreateReply(e, post.id)}>
-                                <textarea
-                                  className="post-input reply-input"
-                                  placeholder={isOnline ? 'Escreva sua resposta ao desafio...' : 'Escreva sua resposta (será salva offline)...'}
-                                  value={replyText}
-                                  onChange={(e) => setReplyText(e.target.value)}
-                                />
-                                {replyMedia && (
-                                  <div className="media-preview">
-                                    {replyMediaType === 'video' ? (
-                                      <video src={replyMedia} controls />
-                                    ) : (
-                                      <img src={replyMedia} alt="Preview" />
+                                {activeReplyId === post.id && (
+                                  <form className="reply-form" onSubmit={(e) => handleCreateReply(e, post.id)}>
+                                    <textarea
+                                      className="post-input reply-input"
+                                      placeholder={isOnline ? 'Escreva sua resposta ao desafio...' : 'Escreva sua resposta (será salva offline)...'}
+                                      value={replyText}
+                                      onChange={(e) => setReplyText(e.target.value)}
+                                    />
+                                    {replyMedia && (
+                                      <div className="media-preview">
+                                        {replyMediaType === 'video' ? (
+                                          <video src={replyMedia} controls />
+                                        ) : (
+                                          <img src={replyMedia} alt="Preview" />
+                                        )}
+                                        <button type="button" onClick={() => { setReplyMedia(null); setReplyMediaType('') }}>Remover</button>
+                                      </div>
                                     )}
-                                    <button type="button" onClick={() => { setReplyMedia(null); setReplyMediaType('') }}>Remover</button>
-                                  </div>
+                                    <div className="reply-actions">
+                                      <MediaPickers onChange={handleReplyMediaUpload} />
+                                      <button type="submit" className="btn-primary reply-submit-btn">
+                                        {isOnline ? 'Enviar' : 'Salvar offline'}
+                                      </button>
+                                    </div>
+                                  </form>
                                 )}
-                                <div className="reply-actions">
-                                  <MediaPickers onChange={handleReplyMediaUpload} />
-                                  <button type="submit" className="btn-primary reply-submit-btn">
-                                    {isOnline ? 'Enviar' : 'Salvar offline'}
-                                  </button>
-                                </div>
-                              </form>
+                              </>
                             )}
                           </div>
                         </article>
@@ -1107,7 +1149,7 @@ const handleRegister = async (e) => {
                 </>
               )}
 
-  {currentView === 'create' && (
+              {currentView === 'create' && (
                 <form className="create-screen" onSubmit={handleCreatePost}>
                   <div className="create-top">
                     <button type="button" className="icon-round" onClick={() => openAppView('dashboard')} aria-label="Fechar">
@@ -1117,7 +1159,7 @@ const handleRegister = async (e) => {
                   </div>
 
                   <section className="create-block">
-                    <label className="block-label" htmlFor="challenge-title">Meta do desafio</label>
+                    <label className="block-label" htmlFor="challenge-title">Meta do desafio *</label>
                     <textarea
                       id="challenge-title"
                       className="post-input"
@@ -1127,13 +1169,27 @@ const handleRegister = async (e) => {
                     />
                   </section>
 
+                  {/* Campo de Prazo / Data e Hora futura exigido */}
+                  <section className="create-block">
+                    <label className="block-label" htmlFor="challenge-deadline">Prazo limite (Data e Hora futura) *</label>
+                    <input 
+                      id="challenge-deadline"
+                      type="datetime-local" 
+                      className="post-input" 
+                      value={postDeadline} 
+                      onChange={(e) => setPostDeadline(e.target.value)} 
+                      required 
+                      style={{padding: '10px', borderRadius: '8px', border: '1px solid #333', background: '#1a1a1a', color: '#fff', width: '100%'}}
+                    />
+                  </section>
+
                   <section className="create-block">
                     <div className="block-label-row">
                       <span className="block-label">Foto ou vídeo (Recurso Nativo)</span>
                       <span className="hint">Até 5MB</span>
                     </div>
 
-                    {/* Prévia da Mídia Capturada (Caminho principal / Transição de estados) */}
+                    {/* Prévia da Mídia Capturada */}
                     {postMedia && (
                       <div className="media-preview" style={{ marginBottom: '15px', textAlign: 'center' }}>
                         {postMediaType === 'video' ? (
