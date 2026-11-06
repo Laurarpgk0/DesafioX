@@ -13,11 +13,6 @@ O app funciona como PWA (híbrido). Dá para usar no navegador e também instala
 ### [Repositorio do GitHub](https://github.com/jv294/DesafioX)
 
 ## Integrantes
-
-- João Vitor Afonso Damascena (202312489)
-- Leandro Lima Cardoso (202323366)
-- José Carlos Lago Carvalho Neto (202312488)
-- Almir Coelho Rubim Junior (202312480)
 - Laura Gomes da Fonseca (202312824)
 
 ## Como rodar
